@@ -1,10 +1,12 @@
-﻿import socket
+﻿import socket as socket
 import struct
 from threading import Thread
 
-def trace( *args ):
-    # pass
-    print( "".join(map(str,args)) )
+import ipdb
+
+# def trace( *args ):
+#     pass
+    # print( "".join(map(str,args)) )
 
 # Create structs for reading various object types to speed up parsing.
 Vector3 = struct.Struct( '<fff' )
@@ -13,24 +15,37 @@ FloatValue = struct.Struct( '<f' )
 DoubleValue = struct.Struct( '<d' )
 
 class NatNetClient:
-    def __init__( self ):
-        # Change this value to the IP address of the NatNet server.
-        self.serverIPAddress = "192.168.0.10"
+    def __init__( self , client_address, server_address, tracing=False):
 
-        # This should match the multicast address listed in Motive's streaming settings.
-        self.multicastAddress = "239.255.42.99"
+        self.client_address = client_address
+        self.server_address = server_address
+
+        if tracing:
+            self.trace = (lambda *args: "".join(map(str,args)))
+        else:
+            self.trace = (lambda *args: None)
+
+        # # Change this value to the IP address of the NatNet server.
+        # self.serverIPAddress = "192.168.0.10"
+
+        # # This should match the multicast address listed in Motive's streaming settings.
+        # self.multicastAddress = "239.255.42.99"
 
         # NatNet Command channel
-        self.commandPort = 1510
+        self.command_port = 1510
 
-        # NatNet Data channel
-        self.dataPort = 1511
+        # # NatNet Data channel
+        self.dataPort = 1510
 
-        # Set this to a callback method of your choice to receive per-rigid-body data at each frame.
-        self.rigidBodyListener = None
+        # # Set this to a callback method of your choice to receive per-rigid-body data at each frame.
+        # self.rigidBodyListener = None
 
         # NatNet stream version. This will be updated to the actual version the server is using during initialization.
         self.__natNetStreamVersion = (3,0,0,0)
+
+    NATNET_PING    = 0
+    MAX_PACKETSIZE = 100000
+    SOCKET_BUFSIZE = 0x100000
 
     # Client/server message ids
     NAT_PING                  = 0
@@ -46,25 +61,32 @@ class NatNetClient:
     NAT_UNRECOGNIZED_REQUEST  = 100
 
     # Create a data socket to attach to the NatNet stream
-    def __createDataSocket( self, port ):
-        result = socket.socket( socket.AF_INET,     # Internet
-                              socket.SOCK_DGRAM,
-                              socket.IPPROTO_UDP)    # UDP
-        result.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        result.bind( ('', port) )
+    def __createDataSocket( self):
+        # result = socket.socket( socket.AF_INET,     # Internet
+        #                       socket.SOCK_DGRAM,
+        #                       socket.IPPROTO_UDP)    # UDP
+        # result.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        # result.bind( ('', port) )
 
-        mreq = struct.pack("4sl", socket.inet_aton(self.multicastAddress), socket.INADDR_ANY)
-        result.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-        return result
+        # mreq = struct.pack("4sl", socket.inet_aton(self.multicastAddress), socket.INADDR_ANY)
+        # result.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
+        # return result
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
+        sock.bind((self.client_address, self.command_port))
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.SOCKET_BUFSIZE)
+        sock.setblocking(0)
+        return sock
 
-    # Create a command socket to attach to the NatNet stream
-    def __createCommandSocket( self ):
-        result = socket.socket( socket.AF_INET, socket.SOCK_DGRAM )
-        result.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        result.bind( ('', 0) )
-        result.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
 
-        return result
+    # # Create a command socket to attach to the NatNet stream
+    # def __createCommandSocket( self ):
+    #     result = socket.socket( socket.AF_INET, socket.SOCK_DGRAM )
+    #     result.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    #     result.bind( ('', 0) )
+    #     result.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+
+    #     return result
 
     # Unpack a rigid body object from a data packet
     def __unpackRigidBody( self, data ):
@@ -73,15 +95,15 @@ class NatNetClient:
         # ID (4 bytes)
         id = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
-        trace( "ID:", id )
+        self.trace( "ID:", id )
 
         # Position and orientation
         pos = Vector3.unpack( data[offset:offset+12] )
         offset += 12
-        trace( "\tPosition:", pos[0],",", pos[1],",", pos[2] )
+        self.trace( "\tPosition:", pos[0],",", pos[1],",", pos[2] )
         rot = Quaternion.unpack( data[offset:offset+16] )
         offset += 16
-        trace( "\tOrientation:", rot[0],",", rot[1],",", rot[2],",", rot[3] )
+        self.trace( "\tOrientation:", rot[0],",", rot[1],",", rot[2],",", rot[3] )
 
         # Send information to any listener.
         if self.rigidBodyListener is not None:
@@ -93,26 +115,26 @@ class NatNetClient:
             markerCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
             offset += 4
             markerCountRange = range( 0, markerCount )
-            trace( "\tMarker Count:", markerCount )
+            self.trace( "\tMarker Count:", markerCount )
 
             # Marker positions
             for i in markerCountRange:
                 pos = Vector3.unpack( data[offset:offset+12] )
                 offset += 12
-                trace( "\tMarker", i, ":", pos[0],",", pos[1],",", pos[2] )
+                self.trace( "\tMarker", i, ":", pos[0],",", pos[1],",", pos[2] )
 
             if( self.__natNetStreamVersion[0] >= 2 ):
                 # Marker ID's
                 for i in markerCountRange:
                     id = int.from_bytes( data[offset:offset+4], byteorder='little' )
                     offset += 4
-                    trace( "\tMarker ID", i, ":", id )
+                    self.trace( "\tMarker ID", i, ":", id )
 
                 # Marker sizes
                 for i in markerCountRange:
                     size = FloatValue.unpack( data[offset:offset+4] )
                     offset += 4
-                    trace( "\tMarker Size", i, ":", size[0] )
+                    self.trace( "\tMarker Size", i, ":", size[0] )
 
         # Skip padding inserted by the server
         offset += 4
@@ -120,14 +142,14 @@ class NatNetClient:
         if( self.__natNetStreamVersion[0] >= 2 ):
             markerError, = FloatValue.unpack( data[offset:offset+4] )
             offset += 4
-            trace( "\tMarker Error:", markerError )
+            self.trace( "\tMarker Error:", markerError )
 
         # Version 2.6 and later
         if( ( ( self.__natNetStreamVersion[0] == 2 ) and ( self.__natNetStreamVersion[1] >= 6 ) ) or self.__natNetStreamVersion[0] > 2 or self.__natNetStreamVersion[0] == 0 ):
             param, = struct.unpack( 'h', data[offset:offset+2] )
             trackingValid = ( param & 0x01 ) != 0
             offset += 2
-            trace( "\tTracking Valid:", 'True' if trackingValid else 'False' )
+            self.trace( "\tTracking Valid:", 'True' if trackingValid else 'False' )
 
         return offset
 
@@ -137,11 +159,11 @@ class NatNetClient:
 
         id = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
-        trace( "ID:", id )
+        self.trace( "ID:", id )
 
         rigidBodyCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
-        trace( "Rigid Body Count:", rigidBodyCount )
+        self.trace( "Rigid Body Count:", rigidBodyCount )
         for j in range( 0, rigidBodyCount ):
             offset += self.__unpackRigidBody( data[offset:] )
 
@@ -149,7 +171,7 @@ class NatNetClient:
 
     # Unpack data from a motion capture frame message
     def __unpackMocapData( self, data ):
-        trace( "Begin MoCap Frame\n-----------------\n" )
+        self.trace( "Begin MoCap Frame\n-----------------\n" )
 
         data = memoryview( data )
         offset = 0
@@ -157,43 +179,43 @@ class NatNetClient:
         # Frame number (4 bytes)
         frameNumber = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
-        trace( "Frame #:", frameNumber )
+        self.trace( "Frame #:", frameNumber )
 
         # Marker set count (4 bytes)
         markerSetCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
-        trace( "Marker Set Count:", markerSetCount )
+        self.trace( "Marker Set Count:", markerSetCount )
 
         for i in range( 0, markerSetCount ):
             # Model name
             modelName, separator, remainder = bytes(data[offset:]).partition( b'\0' )
             offset += len( modelName ) + 1
-            trace( "Model Name:", modelName.decode( 'utf-8' ) )
+            self.trace( "Model Name:", modelName.decode( 'utf-8' ) )
 
             # Marker count (4 bytes)
             markerCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
             offset += 4
-            trace( "Marker Count:", markerCount )
+            self.trace( "Marker Count:", markerCount )
 
             for j in range( 0, markerCount ):
                 pos = Vector3.unpack( data[offset:offset+12] )
                 offset += 12
-                #trace( "\tMarker", j, ":", pos[0],",", pos[1],",", pos[2] )
+                #self.trace( "\tMarker", j, ":", pos[0],",", pos[1],",", pos[2] )
 
         # Unlabeled markers count (4 bytes)
         unlabeledMarkersCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
-        trace( "Unlabeled Markers Count:", unlabeledMarkersCount )
+        self.trace( "Unlabeled Markers Count:", unlabeledMarkersCount )
 
         for i in range( 0, unlabeledMarkersCount ):
             pos = Vector3.unpack( data[offset:offset+12] )
             offset += 12
-            trace( "\tMarker", i, ":", pos[0],",", pos[1],",", pos[2] )
+            self.trace( "\tMarker", i, ":", pos[0],",", pos[1],",", pos[2] )
 
         # Rigid body count (4 bytes)
         rigidBodyCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
-        trace( "Rigid Body Count:", rigidBodyCount )
+        self.trace( "Rigid Body Count:", rigidBodyCount )
 
         for i in range( 0, rigidBodyCount ):
             offset += self.__unpackRigidBody( data[offset:] )
@@ -203,7 +225,7 @@ class NatNetClient:
         if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] > 0 ) or self.__natNetStreamVersion[0] > 2 ):
             skeletonCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
             offset += 4
-            trace( "Skeleton Count:", skeletonCount )
+            self.trace( "Skeleton Count:", skeletonCount )
             for i in range( 0, skeletonCount ):
                 offset += self.__unpackSkeleton( data[offset:] )
 
@@ -212,7 +234,7 @@ class NatNetClient:
         if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] > 3 ) or self.__natNetStreamVersion[0] > 2 ):
             labeledMarkerCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
             offset += 4
-            trace( "Labeled Marker Count:", labeledMarkerCount )
+            self.trace( "Labeled Marker Count:", labeledMarkerCount )
             for i in range( 0, labeledMarkerCount ):
                 id = int.from_bytes( data[offset:offset+4], byteorder='little' )
                 offset += 4
@@ -220,6 +242,9 @@ class NatNetClient:
                 offset += 12
                 size = FloatValue.unpack( data[offset:offset+4] )
                 offset += 4
+
+                self.trace( "Pos:", pos )
+                self.trace( "Size:", size )
 
                 # Version 2.6 and later
                 if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] >= 6 ) or self.__natNetStreamVersion[0] > 2 or major == 0 ):
@@ -233,18 +258,18 @@ class NatNetClient:
                 if( ( self.__natNetStreamVersion[0] >= 3 ) or  major == 0 ):
                     residual, = FloatValue.unpack( data[offset:offset+4] )
                     offset += 4
-                    trace( "Residual:", residual )
+                    self.trace( "Residual:", residual )
 
         # Force Plate data (version 2.9 and later)
         if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] >= 9 ) or self.__natNetStreamVersion[0] > 2 ):
             forcePlateCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
             offset += 4
-            trace( "Force Plate Count:", forcePlateCount )
+            self.trace( "Force Plate Count:", forcePlateCount )
             for i in range( 0, forcePlateCount ):
                 # ID
                 forcePlateID = int.from_bytes( data[offset:offset+4], byteorder='little' )
                 offset += 4
-                trace( "Force Plate", i, ":", forcePlateID )
+                self.trace( "Force Plate", i, ":", forcePlateID )
 
                 # Channel Count
                 forcePlateChannelCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
@@ -252,24 +277,24 @@ class NatNetClient:
 
                 # Channel Data
                 for j in range( 0, forcePlateChannelCount ):
-                    trace( "\tChannel", j, ":", forcePlateID )
+                    self.trace( "\tChannel", j, ":", forcePlateID )
                     forcePlateChannelFrameCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
                     offset += 4
                     for k in range( 0, forcePlateChannelFrameCount ):
                         forcePlateChannelVal = int.from_bytes( data[offset:offset+4], byteorder='little' )
                         offset += 4
-                        trace( "\t\t", forcePlateChannelVal )
+                        self.trace( "\t\t", forcePlateChannelVal )
 
         # Device data (version 2.11 and later)
         if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] >= 11 ) or self.__natNetStreamVersion[0] > 2 ):
             deviceCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
             offset += 4
-            trace( "Device Count:", deviceCount )
+            self.trace( "Device Count:", deviceCount )
             for i in range( 0, deviceCount ):
                 # ID
                 deviceID = int.from_bytes( data[offset:offset+4], byteorder='little' )
                 offset += 4
-                trace( "Device", i, ":", deviceID )
+                self.trace( "Device", i, ":", deviceID )
 
                 # Channel Count
                 deviceChannelCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
@@ -277,13 +302,13 @@ class NatNetClient:
 
                 # Channel Data
                 for j in range( 0, deviceChannelCount ):
-                    trace( "\tChannel", j, ":", deviceID )
+                    self.trace( "\tChannel", j, ":", deviceID )
                     deviceChannelFrameCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
                     offset += 4
                     for k in range( 0, deviceChannelFrameCount ):
                         deviceChannelVal = int.from_bytes( data[offset:offset+4], byteorder='little' )
                         offset += 4
-                        trace( "\t\t", deviceChannelVal )
+                        self.trace( "\t\t", deviceChannelVal )
 
         # Timecode
         timecode = int.from_bytes( data[offset:offset+4], byteorder='little' )
@@ -316,8 +341,9 @@ class NatNetClient:
 
         # Send information to any listener.
         if self.newFrameListener is not None:
-            self.newFrameListener( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBodyCount, skeletonCount,
-                                  labeledMarkerCount, timecode, timecodeSub, timestamp, isRecording, trackedModelsChanged )
+            self.newFrameListener( frameNumber, markerSetCount, unlabeledMarkersCount, 
+                                   rigidBodyCount, skeletonCount, labeledMarkerCount, timecode, 
+                                   timecodeSub, timestamp, isRecording, trackedModelsChanged )
 
     # Unpack a marker set description packet
     def __unpackMarkerSetDescription( self, data ):
@@ -325,7 +351,7 @@ class NatNetClient:
 
         name, separator, remainder = bytes(data[offset:]).partition( b'\0' )
         offset += len( name ) + 1
-        trace( "Markerset Name:", name.decode( 'utf-8' ) )
+        self.trace( "Markerset Name:", name.decode( 'utf-8' ) )
 
         markerCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
@@ -333,7 +359,7 @@ class NatNetClient:
         for i in range( 0, markerCount ):
             name, separator, remainder = bytes(data[offset:]).partition( b'\0' )
             offset += len( name ) + 1
-            trace( "\tMarker Name:", name.decode( 'utf-8' ) )
+            self.trace( "\tMarker Name:", name.decode( 'utf-8' ) )
 
         return offset
 
@@ -345,7 +371,7 @@ class NatNetClient:
         if( self.__natNetStreamVersion[0] >= 2 ):
             name, separator, remainder = bytes(data[offset:]).partition( b'\0' )
             offset += len( name ) + 1
-            trace( "\tMarker Name:", name.decode( 'utf-8' ) )
+            self.trace( "\tMarker Name:", name.decode( 'utf-8' ) )
 
         id = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
@@ -364,7 +390,7 @@ class NatNetClient:
 
         name, separator, remainder = bytes(data[offset:]).partition( b'\0' )
         offset += len( name ) + 1
-        trace( "\tMarker Name:", name.decode( 'utf-8' ) )
+        self.trace( "\tMarker Name:", name.decode( 'utf-8' ) )
 
         id = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
@@ -393,22 +419,30 @@ class NatNetClient:
             elif( type == 2 ):
                 offset += self.__unpackSkeletonDescription( data[offset:] )
 
-    def __dataThreadFunction( self, socket ):
-        while True:
-            print('in the loop')
-            # Block for input
-            data, addr = socket.recvfrom( 32768 ) # 32k byte buffer size
-            if( len( data ) > 0 ):
-                self.__processMessage( data )
+    def __dataThreadFunction( self):
+        while True:  # replace with a flag
+            try:
+                msg, address = self.dataSocket.recvfrom(self.MAX_PACKETSIZE + 4)
+                if( len( msg ) > 0 ):
+                    self.__processMessage( msg )
+
+                # msg, address = commandSocket.recvfrom(MAX_PACKETSIZE + 4)
+                # data = msg
+                # if( len( data ) > 0 ):
+                #     streamingClient._NatNetClient__processMessage( data )
+
+            except socket.error:
+                pass
+
 
     def __processMessage( self, data ):
-        trace( "Begin Packet\n------------\n" )
+        self.trace( "Begin Packet\n------------\n" )
 
         messageID = int.from_bytes( data[0:2], byteorder='little' )
-        trace( "Message ID:", messageID )
+        self.trace( "Message ID:", messageID )
 
         packetSize = int.from_bytes( data[2:4], byteorder='little' )
-        trace( "Packet Size:", packetSize )
+        self.trace( "Packet Size:", packetSize )
 
         offset = 4
         if( messageID == self.NAT_FRAMEOFDATA ):
@@ -427,56 +461,60 @@ class NatNetClient:
             else:
                 message, separator, remainder = bytes(data[offset:]).partition( b'\0' )
                 offset += len( message ) + 1
-                trace( "Command response:", message.decode( 'utf-8' ) )
+                self.trace( "Command response:", message.decode( 'utf-8' ) )
         elif( messageID == self.NAT_UNRECOGNIZED_REQUEST ):
-            trace( "Received 'Unrecognized request' from server" )
+            self.trace( "Received 'Unrecognized request' from server" )
         elif( messageID == self.NAT_MESSAGESTRING ):
             message, separator, remainder = bytes(data[offset:]).partition( b'\0' )
             offset += len( message ) + 1
-            trace( "Received message from server:", message.decode( 'utf-8' ) )
+            self.trace( "Received message from server:", message.decode( 'utf-8' ) )
         else:
-            trace( "ERROR: Unrecognized packet type" )
+            self.trace( "ERROR: Unrecognized packet type" )
 
-        trace( "End Packet\n----------\n" )
+        self.trace( "End Packet\n----------\n" )
 
-    def sendCommand( self, command, commandStr, socket, address ):
-        # Compose the message in our known message format
-        if( command == self.NAT_REQUEST_MODELDEF or command == self.NAT_REQUEST_FRAMEOFDATA ):
-            packetSize = 0
-            commandStr = ""
-        elif( command == self.NAT_REQUEST ):
-            packetSize = len( commandStr ) + 1
-        elif( command == self.NAT_PING ):
-            commandStr = "Ping"
-            packetSize = len( commandStr ) + 1
+    # def sendCommand( self, command, commandStr, socket, address ):
+    #     # Compose the message in our known message format
+    #     if( command == self.NAT_REQUEST_MODELDEF or command == self.NAT_REQUEST_FRAMEOFDATA ):
+    #         packetSize = 0
+    #         commandStr = ""
+    #     elif( command == self.NAT_REQUEST ):
+    #         packetSize = len( commandStr ) + 1
+    #     elif( command == self.NAT_PING ):
+    #         commandStr = "Ping"
+    #         packetSize = len( commandStr ) + 1
 
-        data = command.to_bytes( 2, byteorder='little' )
-        data += packetSize.to_bytes( 2, byteorder='little' )
+    #     data = command.to_bytes( 2, byteorder='little' )
+    #     data += packetSize.to_bytes( 2, byteorder='little' )
 
-        data += commandStr.encode( 'utf-8' )
-        data += b'\0'
+    #     data += commandStr.encode( 'utf-8' )
+    #     data += b'\0'
 
-        socket.sendto( data, address )
+    #     socket.sendto( data, address )
 
     def run( self ):
         # Create the data socket
-        self.dataSocket = self.__createDataSocket( self.dataPort )
+        self.dataSocket = self.__createDataSocket()
         if( self.dataSocket is None ):
             print( "Could not open data channel" )
             exit
 
-        # Create the command socket
-        self.commandSocket = self.__createCommandSocket()
-        if( self.commandSocket is None ):
-            print( "Could not open command channel" )
-            exit
+        msg = struct.pack("I", self.NATNET_PING)
+        _ = self.dataSocket.sendto(msg, (self.server_address, self.command_port))
+
+
+        # # Create the command socket
+        # self.commandSocket = self.__createCommandSocket()
+        # if( self.commandSocket is None ):
+        #     print( "Could not open command channel" )
+        #     exit
 
         # Create a separate thread for receiving data packets
-        dataThread = Thread( target = self.__dataThreadFunction, args = (self.dataSocket, ))
+        dataThread = Thread( target = self.__dataThreadFunction )#, args = (self.dataSocket, ))
         dataThread.start()
 
-        # Create a separate thread for receiving command packets
-        commandThread = Thread( target = self.__dataThreadFunction, args = (self.commandSocket, ))
-        commandThread.start()
+        # # Create a separate thread for receiving command packets
+        # commandThread = Thread( target = self.__dataThreadFunction, args = (self.commandSocket, ))
+        # commandThread.start()
 
-        self.sendCommand( self.NAT_REQUEST_MODELDEF, "", self.commandSocket, (self.serverIPAddress, self.commandPort) )
+        # self.sendCommand( self.NAT_REQUEST_MODELDEF, "", self.commandSocket, (self.serverIPAddress, self.commandPort) )
