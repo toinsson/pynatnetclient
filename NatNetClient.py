@@ -1,12 +1,12 @@
 ﻿import socket as socket
 import struct
-from threading import Thread
 
-import ipdb
+import threading
+# from threading import Thread
 
-# def trace( *args ):
-#     pass
-    # print( "".join(map(str,args)) )
+from distutils.version import LooseVersion, StrictVersion
+
+# import ipdb
 
 # Create structs for reading various object types to speed up parsing.
 Vector3 = struct.Struct( '<fff' )
@@ -14,34 +14,40 @@ Quaternion = struct.Struct( '<ffff' )
 FloatValue = struct.Struct( '<f' )
 DoubleValue = struct.Struct( '<d' )
 
+
+class ExposedData(object):
+    """docstring for ExposedData"""
+    frameNumber = 0
+
+
+
+
+
 class NatNetClient:
     def __init__( self , client_address, server_address, tracing=False):
 
         self.client_address = client_address
         self.server_address = server_address
 
+        # TODO: replace with logging
         if tracing:
-            self.trace = (lambda *args: "".join(map(str,args)))
+            self.trace = (lambda *args: print("".join(map(str,args))))
         else:
             self.trace = (lambda *args: None)
-
-        # # Change this value to the IP address of the NatNet server.
-        # self.serverIPAddress = "192.168.0.10"
-
-        # # This should match the multicast address listed in Motive's streaming settings.
-        # self.multicastAddress = "239.255.42.99"
 
         # NatNet Command channel
         self.command_port = 1510
 
-        # # NatNet Data channel
-        self.dataPort = 1510
-
-        # # Set this to a callback method of your choice to receive per-rigid-body data at each frame.
-        # self.rigidBodyListener = None
-
-        # NatNet stream version. This will be updated to the actual version the server is using during initialization.
+        # NatNet stream version, updated to the actual server version during initialization.
         self.__natNetStreamVersion = (3,0,0,0)
+        self.__natNetStreamVersion2 = '.'.join([str(i) for i in (3,0,0,0)])
+
+        # lopping variable
+        self.is_looping = threading.Event()
+
+        # store for received data
+        self.ed = ExposedData()
+
 
     NATNET_PING    = 0
     MAX_PACKETSIZE = 100000
@@ -62,31 +68,12 @@ class NatNetClient:
 
     # Create a data socket to attach to the NatNet stream
     def __createDataSocket( self):
-        # result = socket.socket( socket.AF_INET,     # Internet
-        #                       socket.SOCK_DGRAM,
-        #                       socket.IPPROTO_UDP)    # UDP
-        # result.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        # result.bind( ('', port) )
-
-        # mreq = struct.pack("4sl", socket.inet_aton(self.multicastAddress), socket.INADDR_ANY)
-        # result.setsockopt(socket.IPPROTO_IP, socket.IP_ADD_MEMBERSHIP, mreq)
-        # return result
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM, 0)
         sock.bind((self.client_address, self.command_port))
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, self.SOCKET_BUFSIZE)
         sock.setblocking(0)
         return sock
-
-
-    # # Create a command socket to attach to the NatNet stream
-    # def __createCommandSocket( self ):
-    #     result = socket.socket( socket.AF_INET, socket.SOCK_DGRAM )
-    #     result.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    #     result.bind( ('', 0) )
-    #     result.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-
-    #     return result
 
     # Unpack a rigid body object from a data packet
     def __unpackRigidBody( self, data ):
@@ -177,20 +164,20 @@ class NatNetClient:
         offset = 0
 
         # Frame number (4 bytes)
-        frameNumber = int.from_bytes( data[offset:offset+4], byteorder='little' )
+        self.ed.frameNumber = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
-        self.trace( "Frame #:", frameNumber )
+        # self.trace( "Frame #:" , self.ed.frameNumber )
 
         # Marker set count (4 bytes)
         markerSetCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
-        self.trace( "Marker Set Count:", markerSetCount )
+        # self.trace( "Marker Set Count:", markerSetCount )
 
         for i in range( 0, markerSetCount ):
             # Model name
             modelName, separator, remainder = bytes(data[offset:]).partition( b'\0' )
             offset += len( modelName ) + 1
-            self.trace( "Model Name:", modelName.decode( 'utf-8' ) )
+            # self.trace( "Model Name:", modelName.decode( 'utf-8' ) )
 
             # Marker count (4 bytes)
             markerCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
@@ -230,8 +217,9 @@ class NatNetClient:
                 offset += self.__unpackSkeleton( data[offset:] )
 
         # Labeled markers (Version 2.3 and later)
-        labeledMarkerCount = 0
-        if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] > 3 ) or self.__natNetStreamVersion[0] > 2 ):
+        self.ed.labeledMarkerCount = 0
+        if self.__natNetStreamVersion2 > LooseVersion("2.3"):
+        # if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] > 3 ) or self.__natNetStreamVersion[0] > 2 ):
             labeledMarkerCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
             offset += 4
             self.trace( "Labeled Marker Count:", labeledMarkerCount )
@@ -339,12 +327,6 @@ class NatNetClient:
         trackedModelsChanged = ( param & 0x02 ) != 0
         offset += 2
 
-        # Send information to any listener.
-        if self.newFrameListener is not None:
-            self.newFrameListener( frameNumber, markerSetCount, unlabeledMarkersCount, 
-                                   rigidBodyCount, skeletonCount, labeledMarkerCount, timecode, 
-                                   timecodeSub, timestamp, isRecording, trackedModelsChanged )
-
     # Unpack a marker set description packet
     def __unpackMarkerSetDescription( self, data ):
         offset = 0
@@ -420,19 +402,16 @@ class NatNetClient:
                 offset += self.__unpackSkeletonDescription( data[offset:] )
 
     def __dataThreadFunction( self):
-        while True:  # replace with a flag
+        while self.is_looping.is_set():  # replace with a flag
             try:
                 msg, address = self.dataSocket.recvfrom(self.MAX_PACKETSIZE + 4)
                 if( len( msg ) > 0 ):
                     self.__processMessage( msg )
 
-                # msg, address = commandSocket.recvfrom(MAX_PACKETSIZE + 4)
-                # data = msg
-                # if( len( data ) > 0 ):
-                #     streamingClient._NatNetClient__processMessage( data )
-
             except socket.error:
                 pass
+
+        print('stop the loop in thread')
 
 
     def __processMessage( self, data ):
@@ -453,6 +432,7 @@ class NatNetClient:
             offset += 256   # Skip the sending app's Name field
             offset += 4     # Skip the sending app's Version info
             self.__natNetStreamVersion = struct.unpack( 'BBBB', data[offset:offset+4] )
+            self.__natNetStreamVersion2 = '.'.join([str(i) for i in self.__natNetStreamVersion])
             offset += 4
         elif( messageID == self.NAT_RESPONSE ):
             if( packetSize == 4 ):
@@ -473,24 +453,11 @@ class NatNetClient:
 
         self.trace( "End Packet\n----------\n" )
 
-    # def sendCommand( self, command, commandStr, socket, address ):
-    #     # Compose the message in our known message format
-    #     if( command == self.NAT_REQUEST_MODELDEF or command == self.NAT_REQUEST_FRAMEOFDATA ):
-    #         packetSize = 0
-    #         commandStr = ""
-    #     elif( command == self.NAT_REQUEST ):
-    #         packetSize = len( commandStr ) + 1
-    #     elif( command == self.NAT_PING ):
-    #         commandStr = "Ping"
-    #         packetSize = len( commandStr ) + 1
 
-    #     data = command.to_bytes( 2, byteorder='little' )
-    #     data += packetSize.to_bytes( 2, byteorder='little' )
+    def stop(self):
+        """Stop the while loop that listen to messages."""
+        self.is_looping.clear()
 
-    #     data += commandStr.encode( 'utf-8' )
-    #     data += b'\0'
-
-    #     socket.sendto( data, address )
 
     def run( self ):
         # Create the data socket
@@ -502,19 +469,9 @@ class NatNetClient:
         msg = struct.pack("I", self.NATNET_PING)
         _ = self.dataSocket.sendto(msg, (self.server_address, self.command_port))
 
-
-        # # Create the command socket
-        # self.commandSocket = self.__createCommandSocket()
-        # if( self.commandSocket is None ):
-        #     print( "Could not open command channel" )
-        #     exit
+        # set the loop flag event
+        self.is_looping.set()
 
         # Create a separate thread for receiving data packets
-        dataThread = Thread( target = self.__dataThreadFunction )#, args = (self.dataSocket, ))
-        dataThread.start()
-
-        # # Create a separate thread for receiving command packets
-        # commandThread = Thread( target = self.__dataThreadFunction, args = (self.commandSocket, ))
-        # commandThread.start()
-
-        # self.sendCommand( self.NAT_REQUEST_MODELDEF, "", self.commandSocket, (self.serverIPAddress, self.commandPort) )
+        self.dataThread = threading.Thread( target = self.__dataThreadFunction )
+        self.dataThread.start()
