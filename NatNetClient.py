@@ -1,12 +1,14 @@
-﻿import socket as socket
+﻿import logging
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
+
+import socket as socket
 import struct
 
 import threading
-# from threading import Thread
 
 from distutils.version import LooseVersion, StrictVersion
 
-# import ipdb
 
 # Create structs for reading various object types to speed up parsing.
 Vector3 = struct.Struct( '<fff' )
@@ -17,37 +19,20 @@ DoubleValue = struct.Struct( '<d' )
 
 class ExposedData(object):
     """docstring for ExposedData"""
-    frameNumber = 0
+    def __init__(self):
 
+        self.lock = threading.Lock()
 
-
+        self.frameNumber = 0
+        self.labeledMarkerCount = 0
+        self.labeledMarker = []
+        self.timestamp = 0
+        self.stampCameraExposure = 0
+        self.stampDataReceived = 0
+        self.stampTransmit = 0
 
 
 class NatNetClient:
-    def __init__( self , client_address, server_address, tracing=False):
-
-        self.client_address = client_address
-        self.server_address = server_address
-
-        # TODO: replace with logging
-        if tracing:
-            self.trace = (lambda *args: print("".join(map(str,args))))
-        else:
-            self.trace = (lambda *args: None)
-
-        # NatNet Command channel
-        self.command_port = 1510
-
-        # NatNet stream version, updated to the actual server version during initialization.
-        self.__natNetStreamVersion = (3,0,0,0)
-        self.__natNetStreamVersion2 = '.'.join([str(i) for i in (3,0,0,0)])
-
-        # lopping variable
-        self.is_looping = threading.Event()
-
-        # store for received data
-        self.ed = ExposedData()
-
 
     NATNET_PING    = 0
     MAX_PACKETSIZE = 100000
@@ -65,6 +50,26 @@ class NatNetClient:
     NAT_MESSAGESTRING         = 8
     NAT_DISCONNECT            = 9
     NAT_UNRECOGNIZED_REQUEST  = 100
+
+    def __init__( self , client_address, server_address, tracing=False):
+
+        self.client_address = client_address
+        self.server_address = server_address
+
+        self.trace = (lambda *args: logger.info("".join(map(str,args))))
+
+        # NatNet Command channel
+        self.command_port = 1510
+
+        # NatNet stream version, updated to the actual server version during initialization.
+        self.__natNetStreamVersion = (3,0,0,0)
+        self.__natNetStreamVersion2 = '.'.join([str(i) for i in (3,0,0,0)])
+
+        # lopping variable
+        self.is_looping = threading.Event()
+
+        # store for received data
+        self.ed = ExposedData()
 
     # Create a data socket to attach to the NatNet stream
     def __createDataSocket( self):
@@ -160,13 +165,16 @@ class NatNetClient:
     def __unpackMocapData( self, data ):
         self.trace( "Begin MoCap Frame\n-----------------\n" )
 
+        # clear data
+        self.ed = ExposedData()
+
         data = memoryview( data )
         offset = 0
 
         # Frame number (4 bytes)
         self.ed.frameNumber = int.from_bytes( data[offset:offset+4], byteorder='little' )
         offset += 4
-        # self.trace( "Frame #:" , self.ed.frameNumber )
+        self.trace( "Frame #:" , self.ed.frameNumber )
 
         # Marker set count (4 bytes)
         markerSetCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
@@ -209,7 +217,7 @@ class NatNetClient:
 
         # Version 2.1 and later
         skeletonCount = 0
-        if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] > 0 ) or self.__natNetStreamVersion[0] > 2 ):
+        if self.__natNetStreamVersion2 > LooseVersion("2.1"):
             skeletonCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
             offset += 4
             self.trace( "Skeleton Count:", skeletonCount )
@@ -217,36 +225,38 @@ class NatNetClient:
                 offset += self.__unpackSkeleton( data[offset:] )
 
         # Labeled markers (Version 2.3 and later)
-        self.ed.labeledMarkerCount = 0
         if self.__natNetStreamVersion2 > LooseVersion("2.3"):
-        # if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] > 3 ) or self.__natNetStreamVersion[0] > 2 ):
-            labeledMarkerCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
+            self.ed.labeledMarkerCount = int.from_bytes( data[offset:offset+4], byteorder='little' )
             offset += 4
-            self.trace( "Labeled Marker Count:", labeledMarkerCount )
-            for i in range( 0, labeledMarkerCount ):
-                id = int.from_bytes( data[offset:offset+4], byteorder='little' )
+            self.trace( "Labeled Marker Count:", self.ed.labeledMarkerCount )
+            for i in range( 0, self.ed.labeledMarkerCount ):
+                ed_dict = {}
+                ed_dict['id'] = int.from_bytes( data[offset:offset+4], byteorder='little' )
                 offset += 4
-                pos = Vector3.unpack( data[offset:offset+12] )
+                ed_dict['pos'] = Vector3.unpack( data[offset:offset+12] )
                 offset += 12
-                size = FloatValue.unpack( data[offset:offset+4] )
+                ed_dict['size'] = FloatValue.unpack( data[offset:offset+4] )
                 offset += 4
 
-                self.trace( "Pos:", pos )
-                self.trace( "Size:", size )
+                self.trace( "Pos:", ed_dict['pos'] )
+                self.trace( "Size:", ed_dict['size'] )
 
                 # Version 2.6 and later
-                if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] >= 6 ) or self.__natNetStreamVersion[0] > 2 or major == 0 ):
+                if self.__natNetStreamVersion2 >= LooseVersion("2.6"):
                     param, = struct.unpack( 'h', data[offset:offset+2] )
                     offset += 2
-                    occluded = ( param & 0x01 ) != 0
-                    pointCloudSolved = ( param & 0x02 ) != 0
-                    modelSolved = ( param & 0x04 ) != 0
+                    ed_dict['occluded'] = ( param & 0x01 ) != 0
+                    ed_dict['pointCloudSolved'] = ( param & 0x02 ) != 0
+                    ed_dict['modelSolved'] = ( param & 0x04 ) != 0
 
                 # Version 3.0 and later
-                if( ( self.__natNetStreamVersion[0] >= 3 ) or  major == 0 ):
-                    residual, = FloatValue.unpack( data[offset:offset+4] )
+                if self.__natNetStreamVersion2 >= LooseVersion("3.0"):
+                    ed_dict['residual'], = FloatValue.unpack( data[offset:offset+4] )  # take [0]
                     offset += 4
-                    self.trace( "Residual:", residual )
+                    self.trace( "Residual:", ed_dict['residual'] )
+
+                self.ed.labeledMarker.append(ed_dict)
+
 
         # Force Plate data (version 2.9 and later)
         if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] >= 9 ) or self.__natNetStreamVersion[0] > 2 ):
@@ -305,20 +315,20 @@ class NatNetClient:
         offset += 4
 
         # Timestamp (increased to double precision in 2.7 and later)
-        if( ( self.__natNetStreamVersion[0] == 2 and self.__natNetStreamVersion[1] >= 7 ) or self.__natNetStreamVersion[0] > 2 ):
-            timestamp, = DoubleValue.unpack( data[offset:offset+8] )
+        if self.__natNetStreamVersion2 > LooseVersion("2.7"):
+            self.ed.timestamp, = DoubleValue.unpack( data[offset:offset+8] )
             offset += 8
         else:
-            timestamp, = FloatValue.unpack( data[offset:offset+4] )
+            self.ed.timestamp, = FloatValue.unpack( data[offset:offset+4] )
             offset += 4
 
         # Hires Timestamp (Version 3.0 and later)
-        if( ( self.__natNetStreamVersion[0] >= 3 ) or  major == 0 ):
-            stampCameraExposure = int.from_bytes( data[offset:offset+8], byteorder='little' )
+        if self.__natNetStreamVersion2 > LooseVersion("3.0"):
+            self.ed.stampCameraExposure = int.from_bytes( data[offset:offset+8], byteorder='little' )
             offset += 8
-            stampDataReceived = int.from_bytes( data[offset:offset+8], byteorder='little' )
+            self.ed.stampDataReceived = int.from_bytes( data[offset:offset+8], byteorder='little' )
             offset += 8
-            stampTransmit = int.from_bytes( data[offset:offset+8], byteorder='little' )
+            self.ed.stampTransmit = int.from_bytes( data[offset:offset+8], byteorder='little' )
             offset += 8
 
         # Frame parameters
@@ -402,13 +412,13 @@ class NatNetClient:
                 offset += self.__unpackSkeletonDescription( data[offset:] )
 
     def __dataThreadFunction( self):
-        while self.is_looping.is_set():  # replace with a flag
+        while self.is_looping.is_set():
             try:
                 msg, address = self.dataSocket.recvfrom(self.MAX_PACKETSIZE + 4)
                 if( len( msg ) > 0 ):
-                    self.__processMessage( msg )
-
-            except socket.error:
+                    with self.ed.lock:
+                        self.__processMessage( msg )
+            except socket.error:   # no message
                 pass
 
         print('stop the loop in thread')
