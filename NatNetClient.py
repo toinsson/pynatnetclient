@@ -485,3 +485,11 @@ class NatNetClient:
         # Create a separate thread for receiving data packets
         self.dataThread = threading.Thread( target = self.__dataThreadFunction )
         self.dataThread.start()
+
+        # set up a ping timer
+        def ping():
+            msg = struct.pack("I", self.NATNET_PING)
+            _ = self.dataSocket.sendto(msg, (self.server_address, self.command_port))
+            if self.is_looping.is_set():
+                threading.Timer(0.1, ping).start()
+        ping()

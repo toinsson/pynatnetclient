@@ -1,46 +1,26 @@
 
-client_address = '192.168.0.11'
-server_address = '192.168.0.10'
+import logging
+logging.basicConfig(level=logging.WARNING)
 
 
 from NatNetClient import NatNetClient
 
-import logging
-logging.basicConfig(level=logging.INFO)
-
-
-# This is a callback function that gets connected to the NatNet client and called once per mocap frame.
-def receiveNewFrame( frameNumber, markerSetCount, unlabeledMarkersCount, rigidBodyCount, skeletonCount,
-                    labeledMarkerCount, timecode, timecodeSub, timestamp, isRecording, trackedModelsChanged ):
-    # print( "Received frame", frameNumber )
-    with streamingClient.ed.lock:
-        print(streamingClient.ed.frameNumber)
-        print(len(streamingClient.ed.labeledMarker))
-
-# This is a callback function that gets connected to the NatNet client. It is called once per rigid body per frame
-def receiveRigidBodyFrame( id, position, rotation ):
-    # print( "Received frame for rigid body", id )
-    pass
-
-# This will create a new NatNet client
-streamingClient = NatNetClient(client_address, server_address, tracing=False)
-
-# Configure the streaming client to call our rigid body handler on the emulator to send data out.
-streamingClient.newFrameListener = receiveNewFrame
-streamingClient.rigidBodyListener = receiveRigidBodyFrame
-
-
-streamingClient.run()
-
-print('passed the init')
+client_address = '192.168.0.11'
+server_address = '192.168.0.10'
+nnc = NatNetClient(client_address, server_address, tracing=False)
+nnc.run()
 
 import time
 
 flag = True
 while flag:
     try:
-        time.sleep(0.01)
+        time.sleep(0.1)
+        with nnc.ed.lock:
+            print(nnc.ed.frameNumber)
+            print(nnc.ed.labeledMarker)
+            print(nnc.ed.timestamp, nnc.ed.stampDataReceived, nnc.ed.stampTransmit)
     except KeyboardInterrupt:
         print('receive stop')
-        streamingClient.stop()
+        nnc.stop()
         flag = False
