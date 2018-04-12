@@ -31,6 +31,13 @@ class ExposedData(object):
         self.stampDataReceived = 0
         self.stampTransmit = 0
 
+    def __copy__(self):
+        ed = ExposedData()
+        ed.__dict__.update(self.__dict__)
+        ed.lock = None
+        return ed
+
+
 
 class NatNetClient:
 
