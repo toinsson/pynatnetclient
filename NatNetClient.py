@@ -63,7 +63,7 @@ class NatNetClient:
         self.client_address = client_address
         self.server_address = server_address
 
-        self.trace = (lambda *args: logger.info("".join(map(str,args))))
+        self.trace = (lambda *args: logger.debug("".join(map(str,args))))
 
         # NatNet Command channel
         self.command_port = 1510
@@ -428,7 +428,7 @@ class NatNetClient:
             except socket.error:   # no message
                 pass
 
-        print('stop the loop in thread')
+        self.trace('listening loop stop')
 
 
     def __processMessage( self, data ):
