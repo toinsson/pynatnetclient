@@ -428,6 +428,8 @@ class NatNetClient:
             except socket.error:   # no message
                 pass
 
+
+        self.dataSocket.close()
         self.trace('listening loop stop')
 
 
@@ -495,8 +497,8 @@ class NatNetClient:
 
         # set up a ping timer
         def ping():
-            msg = struct.pack("I", self.NATNET_PING)
-            _ = self.dataSocket.sendto(msg, (self.server_address, self.command_port))
             if self.is_looping.is_set():
+                msg = struct.pack("I", self.NATNET_PING)
+                _ = self.dataSocket.sendto(msg, (self.server_address, self.command_port))
                 threading.Timer(0.1, ping).start()
         ping()
