@@ -14,4 +14,4 @@ Adapted from the sample provided in the [NatNet client SDK](https://optitrack.co
 - remove callback function for data access
 - implement a local datastore
 
-The original files from the SDK are included in the legacy folder.
+The original files from the SDK are included in the [legacy](./legacy) folder.
