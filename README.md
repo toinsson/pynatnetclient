@@ -29,6 +29,20 @@ server_address = 192.168.0.11
 nnc = NatNetClient(client_address, server_address)  # connect to a remote server
 ```
 
+OBS: The data that is currently exposed through the class [ExposedData](./pynatnetclient/unpack.py#L14) only relates to labeled markers:
+
+```
+class ExposedData(object):
+
+    frameNumber
+    labeledMarkerCount
+    labeledMarker
+    timestamp
+    stampCameraExposure
+    stampDataReceived
+    stampTransmit
+```
+
 # changes
 
 - split the code in separate classes
