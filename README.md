@@ -1,4 +1,4 @@
-# pynatnet
+# pynatnetclient
 
 Python client for [Optitrack](https://optitrack.com/) cameras.
 
