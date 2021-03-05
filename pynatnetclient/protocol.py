@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+#Copyright © 2021 toinsson
+#Copyright © 2018 Naturalpoint
+# Licensed under the Apache-2.0 License, see LICENSE for details.
+
 NATNET_PING    = 0
 MAX_PACKETSIZE = 100000
 SOCKET_BUFSIZE = 0x100000

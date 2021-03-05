@@ -1,4 +1,9 @@
-﻿import sys
+﻿# -*- coding: utf-8 -*-
+#Copyright © 2021 toinsson
+#Copyright © 2018 Naturalpoint
+# Licensed under the Apache-2.0 License, see LICENSE for details.
+
+import sys
 import socket
 import threading
 

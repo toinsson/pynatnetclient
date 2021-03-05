@@ -1,3 +1,8 @@
+# -*- coding: utf-8 -*-
+#Copyright © 2021 toinsson
+#Copyright © 2018 Naturalpoint
+# Licensed under the Apache-2.0 License, see LICENSE for details.
+
 import struct
 import logging
 import threading

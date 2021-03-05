@@ -1,3 +1,4 @@
+#Copyright © 2021 toinsson
 #Copyright © 2018 Naturalpoint
 #
 #Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,6 +14,8 @@
 #limitations under the License.
 
 # OptiTrack NatNet direct depacketization library for Python 3.x
+# Modified by toinsson for packaging and debugging purposes, as well as
+# supporting remote servers.
 
 
 __version__ = '1.0'
