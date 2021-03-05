@@ -8,6 +8,7 @@ Adapted from the sample provided in the [NatNet client SDK](https://optitrack.co
 # Changes
 
 - split the code in separate classes
+- create a package and add a setup.py file
 - replace the tracing function with logging
 - add remote server functionality
 - remove callback function for data access
