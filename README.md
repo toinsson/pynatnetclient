@@ -29,7 +29,7 @@ server_address = 192.168.0.11
 nnc = NatNetClient(client_address, server_address)  # connect to a remote server
 ```
 
-# Changes
+# changes
 
 - split the code in separate classes
 - create a package and add a setup.py file
