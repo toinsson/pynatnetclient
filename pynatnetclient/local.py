@@ -48,24 +48,23 @@ class NatNetClientLocal(Decoder):
         except socket.error:
             sys.exit(1)
 
-        sock.settimeout(5)
         return sock
 
 
-    def __createCommandSocket(self):
-        """Create a command socket to attach to the NatNet stream."""
-        sock = socket.socket( socket.AF_INET, socket.SOCK_DGRAM )
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    # def __createCommandSocket(self):
+    #     """Create a command socket to attach to the NatNet stream."""
+    #     sock = socket.socket( socket.AF_INET, socket.SOCK_DGRAM )
+    #     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-        try:
-            sock.bind(('', 0))
-        except socket.error:
-            sys.exit(1)
+    #     try:
+    #         sock.bind(('', 0))
+    #     except socket.error:
+    #         sys.exit(1)
 
-        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
-        sock.setblocking(0)
-        sock.settimeout(5)
-        return sock
+    #     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+    #     sock.setblocking(0)
+    #     # sock.settimeout(5)
+    #     return sock
 
 
     def __dataThreadFunction(self, socket):
@@ -87,18 +86,19 @@ class NatNetClientLocal(Decoder):
 
 
     def run(self):
-
-        self.dataSocket = self.__createDataSocket(self.dataPort)
         self.is_looping.set()
 
-        # DATA
+        self.dataSocket = self.__createDataSocket(self.dataPort)
         dataThread = threading.Thread( target = self.__dataThreadFunction, args = (self.dataSocket, ))
         dataThread.start()
 
+
         # COMMAND - not implemented
+
         # self.commandSocket = self.__createCommandSocket()
         # commandThread = Thread( target = self.__dataThreadFunction, args = (self.commandSocket, ))
         # commandThread.start()
+
         # def sendCommand( self, command, commandStr, socket, address ):
         #     # Compose the message in our known message format
         #     if( command == self.NAT_REQUEST_MODELDEF or command == self.NAT_REQUEST_FRAMEOFDATA ):
