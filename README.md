@@ -17,7 +17,7 @@ nnc.run()             # start the listening thread
 with nnc.ed.lock:     # access thread-safe data
     print(nnc.ed.frameNumber)
 
-nnc.close()           # cloes the listening thread
+nnc.close()           # close the listening thread
 ```
 
 When the Optitrack server is streaming over the network, the server and client address are required:
